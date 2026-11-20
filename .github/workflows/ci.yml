@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        version: [latest, "ref:master"]
+    runs-on: ${{ matrix.os }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install: false
+      - name: Link plugin
+        run: mise plugins link --force chibi "$GITHUB_WORKSPACE"
+      - name: List versions
+        run: |
+          mise ls-remote chibi | tee versions.txt
+          grep -qx '0.12' versions.txt
+          ! grep -qx 'stable' versions.txt
+      - name: Install
+        run: mise install "chibi@${{ matrix.version }}"
+      - name: Smoke test
+        run: |
+          printf '%s\n' '(import (scheme base) (scheme write) (srfi 1))' '(display (apply + (iota 5)))' > t.scm
+          out="$(mise exec "chibi@${{ matrix.version }}" -- chibi-scheme t.scm)"
+          test "$out" = 10
+          mise exec "chibi@${{ matrix.version }}" -- snow-chibi help >/dev/null
